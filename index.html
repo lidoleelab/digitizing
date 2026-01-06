@@ -63,6 +63,27 @@
 <script>
 (() => {
   /* =========================
+     MOBILE AUDIO UNLOCK
+  ========================== */
+  let audioUnlocked = false;
+
+  function unlockAudio(){
+    if (audioUnlocked) return;
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(0);
+
+    audioUnlocked = true;
+  }
+
+  document.addEventListener("touchend", unlockAudio, { once: true });
+  document.addEventListener("click", unlockAudio, { once: true });
+
+  /* =========================
      CONFIG
   ========================== */
   const TILES = 400;
@@ -84,12 +105,12 @@
     return arr;
   }
 
-  // ✅ 클릭 전: 흰색/near-white 제거된 그레이 분포
+  // 클릭 전: 흰색 / near-white 제거된 그레이 분포
   function grayScaleValues(){
     const MIN = 8;      // 거의 검정
-    const MAX = 200;    // near-white 제거 핵심값
+    const MAX = 200;    // near-white 제거
     const step = (MAX - MIN) / (TILES - 1);
-    const minDistance = 2; // 400개에 적절한 간격
+    const minDistance = 2;
 
     const values = [];
 
@@ -107,6 +128,7 @@
 
       values.push(g);
     }
+
     return shuffle(values);
   }
 
