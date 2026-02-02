@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Disconnecting Continuity through Digitizing</title>
+  <title>400 Tiles</title>
 
   <style>
     :root{
@@ -28,7 +28,7 @@
 
     .grid{
       display: grid;
-      grid-template-columns: repeat(20, 1fr);
+      grid-template-columns: repeat(20, 1fr); /* 20 × 20 */
       gap: 0;
     }
 
@@ -42,7 +42,6 @@
       border-radius: 0;
       box-shadow: none;
       background: #777; /* JS에서 덮어씀 */
-      -webkit-tap-highlight-color: transparent;
     }
 
     button.tile:focus-visible{
@@ -52,6 +51,26 @@
 
     @media (max-width: 600px){
       .wrap{ width: 100vw; }
+    }
+
+    /* =========================
+       EMBED MODE (inside iframe)
+       - removes gray "border"
+       - removes 960px max width limit
+       - keeps standalone page look unchanged
+    ========================== */
+    html.embed, html.embed body{
+      background: #fff;
+      overflow: hidden; /* prevent any accidental scrollbars in embeds */
+    }
+
+    html.embed body{
+      display: block; /* cancel centering grid */
+    }
+
+    html.embed .wrap{
+      width: 100vw;
+      max-width: none;
     }
   </style>
 </head>
@@ -64,6 +83,40 @@
 <script>
 (() => {
   /* =========================
+     EMBED DETECTION
+     (When this page is inside an iframe, switch to embed mode styles)
+  ========================== */
+  try {
+    if (window.self !== window.top) {
+      document.documentElement.classList.add("embed");
+    }
+  } catch (e) {
+    // If cross-origin blocks access to window.top, assume embedded.
+    document.documentElement.classList.add("embed");
+  }
+
+  /* =========================
+     MOBILE AUDIO UNLOCK
+  ========================== */
+  let audioUnlocked = false;
+
+  function unlockAudio(){
+    if (audioUnlocked) return;
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(0);
+
+    audioUnlocked = true;
+  }
+
+  document.addEventListener("touchend", unlockAudio, { once: true });
+  document.addEventListener("click", unlockAudio, { once: true });
+
+  /* =========================
      CONFIG
   ========================== */
   const TILES = 400;
@@ -75,7 +128,51 @@
   });
 
   /* =========================
-     AUDIO (SINGLE CONTEXT)
+     UTILS
+  ========================== */
+  function shuffle(arr){
+    for (let i = arr.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // 클릭 전: 흰색 / near-white 제거된 그레이 분포
+  function grayScaleValues(){
+    const MIN = 8;      // 거의 검정
+    const MAX = 200;    // near-white 제거
+    const step = (MAX - MIN) / (TILES - 1);
+    const minDistance = 2;
+
+    const values = [];
+
+    for (let i = 0; i < TILES; i++){
+      const base = MIN + i * step;
+      let g, tries = 0;
+
+      do {
+        const jitter = (Math.random() - 0.5) * step;
+        g = Math.round(base + jitter);
+        g = Math.max(MIN, Math.min(MAX, g));
+        tries++;
+        if (tries > 20) break;
+      } while (values.some(v => Math.abs(v - g) < minDistance));
+
+      values.push(g);
+    }
+
+    return shuffle(values);
+  }
+
+  function grayToHex(g){
+    const v = Math.max(1, Math.min(200, g))
+      .toString(16).padStart(2, "0");
+    return `#${v}${v}${v}`;
+  }
+
+  /* =========================
+     AUDIO
   ========================== */
   let audioCtx = null;
   let currentSource = null;
@@ -89,31 +186,10 @@
     return audioCtx;
   }
 
-  // ✅ 모바일/특히 iOS: "같은 audioCtx"를 사용자 제스처에서 unlock
-  async function unlockAudio(){
-    const ctx = ensureCtx();
-
-    // resume는 사용자 제스처 안에서 호출되는 게 중요
-    if (ctx.state === "suspended") {
-      try { await ctx.resume(); } catch {}
-    }
-
-    // 아주 짧은 무음(또는 거의 무음) 버퍼를 한 번 재생해 "오디오 경로"를 깨움
-    try {
-      const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      src.start(0);
-      src.onended = () => { try { src.disconnect(); } catch {} };
-    } catch {}
-  }
-
   async function loadBuffer(url){
     if (bufferCache.has(url)) return bufferCache.get(url);
     const ctx = ensureCtx();
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`오디오 로드 실패: ${url}`);
     const arr = await res.arrayBuffer();
     const buf = await ctx.decodeAudioData(arr);
     bufferCache.set(url, buf);
@@ -133,53 +209,6 @@
     const idx = Math.floor(Math.random() * pool.length);
     const [url] = pool.splice(idx, 1);
     return url;
-  }
-
-  // ✅ "첫 제스처"에서 잠금 해제: iOS는 touchstart/pointerdown이 안정적
-  window.addEventListener("pointerdown", unlockAudio, { once: true });
-  window.addEventListener("touchstart", unlockAudio, { once: true, passive: true });
-  window.addEventListener("click", unlockAudio, { once: true });
-
-  /* =========================
-     UTILS
-  ========================== */
-  function shuffle(arr){
-    for (let i = arr.length - 1; i > 0; i--){
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
-  // 클릭 전: 흰색/near-white 제거
-  function grayScaleValues(){
-    const MIN = 8;
-    const MAX = 200; // ✅ near-white 제거
-    const step = (MAX - MIN) / (TILES - 1);
-    const minDistance = 2;
-
-    const values = [];
-    for (let i = 0; i < TILES; i++){
-      const base = MIN + i * step;
-      let g, tries = 0;
-
-      do {
-        const jitter = (Math.random() - 0.5) * step;
-        g = Math.round(base + jitter);
-        g = Math.max(MIN, Math.min(MAX, g));
-        tries++;
-        if (tries > 20) break;
-      } while (values.some(v => Math.abs(v - g) < minDistance));
-
-      values.push(g);
-    }
-    return shuffle(values);
-  }
-
-  function grayToHex(g){
-    const v = Math.max(1, Math.min(200, g))
-      .toString(16).padStart(2, "0");
-    return `#${v}${v}${v}`;
   }
 
   /* =========================
@@ -206,29 +235,22 @@
         if (activated) return;
         activated = true;
 
-        // ✅ 클릭 제스처 안에서 먼저 unlock/resume (await fetch 전에!)
-        await unlockAudio();
+        const ctx = ensureCtx();
+        if (ctx.state === "suspended") await ctx.resume();
 
-        // 클릭 후: 흰색
+        // 클릭 후: 완전한 흰색
         btn.style.backgroundColor = "#ffffff";
 
         const url = pickAudio();
         if (!url) return;
 
-        try{
-          stopAudio();
-          const ctx = ensureCtx();
-          const buf = await loadBuffer(url);
-
-          const src = ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(ctx.destination);
-          src.start();
-          currentSource = src;
-        } catch (e){
-          // 모바일에서 조용히 실패할 수 있어 콘솔은 남김
-          console.error(e);
-        }
+        stopAudio();
+        const buf = await loadBuffer(url);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start();
+        currentSource = src;
       });
 
       grid.appendChild(btn);
