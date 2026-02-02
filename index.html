@@ -55,17 +55,21 @@
 
     /* =========================
        EMBED MODE (inside iframe)
-       - removes gray "border"
-       - removes 960px max width limit
-       - keeps standalone page look unchanged
+       - removes gray background
+       - removes 960px width cap
+       - avoids scrollbars
     ========================== */
+    html.embed{
+      --bg: #fff;                 /* 핵심: 배경 변수 자체를 흰색으로 */
+    }
+
     html.embed, html.embed body{
-      background: #fff;
-      overflow: hidden; /* prevent any accidental scrollbars in embeds */
+      background: #fff !important;
+      overflow: hidden;
     }
 
     html.embed body{
-      display: block; /* cancel centering grid */
+      display: block;             /* center 배치 해제 */
     }
 
     html.embed .wrap{
@@ -84,14 +88,14 @@
 (() => {
   /* =========================
      EMBED DETECTION
-     (When this page is inside an iframe, switch to embed mode styles)
+     - If this page is inside an iframe, enable embed styles
   ========================== */
   try {
     if (window.self !== window.top) {
       document.documentElement.classList.add("embed");
     }
   } catch (e) {
-    // If cross-origin blocks access to window.top, assume embedded.
+    // cross-origin access to window.top can throw; assume embedded
     document.documentElement.classList.add("embed");
   }
 
@@ -190,6 +194,7 @@
     if (bufferCache.has(url)) return bufferCache.get(url);
     const ctx = ensureCtx();
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch: ${url}`);
     const arr = await res.arrayBuffer();
     const buf = await ctx.decodeAudioData(arr);
     bufferCache.set(url, buf);
@@ -251,6 +256,12 @@
         src.connect(ctx.destination);
         src.start();
         currentSource = src;
+
+        // cleanup when done
+        src.onended = () => {
+          if (currentSource === src) currentSource = null;
+          try { src.disconnect(); } catch {}
+        };
       });
 
       grid.appendChild(btn);
