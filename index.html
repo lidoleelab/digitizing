@@ -43,6 +43,11 @@
       box-shadow: none;
       background: #777; /* JS에서 덮어씀 */
     }
+/* hover 시 컬러 전환이 너무 딱딱하면 부드럽게 */
+    button.tile{
+      transition: background-color 80ms linear;
+    }
+	
 
     button.tile:focus-visible{
       outline: 1px solid rgba(0,0,0,0.25);
@@ -235,6 +240,50 @@
       btn.style.backgroundColor = grayToHex(baseGray);
 
       let activated = false;
+
+      // =========================
+      // HOVER COLOR (random)
+      // =========================
+      const originalColor = grayToHex(baseGray);
+
+      function randomColor(){
+        // 너무 어둡거나 너무 하얀 컬러를 피하려면 약간의 범위를 주는 게 보기 좋습니다.
+        const r = Math.floor(40 + Math.random() * 216);
+        const g = Math.floor(40 + Math.random() * 216);
+        const b = Math.floor(40 + Math.random() * 216);
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+
+      let hoverTimer = null;
+
+      function startHoverColor(){
+        if (activated) return; // 클릭 후엔 흰색 고정이므로 무시
+        // 1회만 바뀌게 하려면 아래 setInterval 대신 한 번만 set 하면 됩니다.
+        btn.style.backgroundColor = randomColor();
+        hoverTimer = setInterval(() => {
+          if (!activated) btn.style.backgroundColor = randomColor();
+        }, 80);
+      }
+
+      function stopHoverColor(){
+        if (hoverTimer){
+          clearInterval(hoverTimer);
+          hoverTimer = null;
+        }
+        if (!activated){
+          btn.style.backgroundColor = originalColor; // 원래 그레이로 복귀
+        }
+      }
+
+      // 데스크톱
+      btn.addEventListener("mouseenter", startHoverColor);
+      btn.addEventListener("mouseleave", stopHoverColor);
+
+      // 모바일(hover 없음 대비): 터치 중 컬러, 떼면 복귀
+      btn.addEventListener("touchstart", startHoverColor, { passive: true });
+      btn.addEventListener("touchend", stopHoverColor, { passive: true });
+      btn.addEventListener("touchcancel", stopHoverColor, { passive: true });
+
 
       btn.addEventListener("click", async () => {
         if (activated) return;
